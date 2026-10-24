@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Comics
+GenericName=Manga and Comics Reader
+Comment=Read manga and comics from your files, MangaDex and Mihon's extensions
+Exec=m3-comics %f
+Icon=comix
+Terminal=false
+Categories=Graphics;Viewer;Office;
+Keywords=manga;comic;comics;webtoon;manhwa;cbz;cbr;reader;mihon;tachiyomi;mangadex;
+StartupWMClass=material_3_comics
+MimeType=application/vnd.comicbook+zip;application/x-cbz;application/vnd.comicbook-rar;application/x-cbr;application/x-cb7;application/x-cbt;

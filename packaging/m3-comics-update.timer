@@ -1,0 +1,12 @@
+[Unit]
+Description=Check the Material 3 Comics library for new chapters
+Documentation=https://github.com/bhimio1/material-3-comics
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=12h
+Persistent=true
+RandomizedDelaySec=10min
+
+[Install]
+WantedBy=timers.target

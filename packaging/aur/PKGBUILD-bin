@@ -1,0 +1,32 @@
+# Maintainer: bhimio1
+# Template: the release workflow fills in @PKGVER@ and @SHA256@ and publishes
+# this to the AUR as material-3-comics-bin.
+pkgname=material-3-comics-bin
+pkgver=@PKGVER@
+pkgrel=1
+pkgdesc="Material 3 manga and comics reader, after Mihon: library, sources, downloads, tracking"
+arch=('x86_64')
+url="https://github.com/bhimio1/material-3-comics"
+license=('MIT')
+depends=('libxkbcommon' 'wayland' 'libglvnd')
+optdepends=(
+  'libarchive: open CBR, CB7 and CBT files (bsdtar)'
+  'libsecret: keep the AniList sign-in in your keyring'
+  'suwayomi-server-bin: Mihon extensions as sources'
+  'xdg-desktop-portal: the folder pickers'
+  'material-3-file-manager: Show in Files'
+)
+provides=('material-3-comics')
+conflicts=('material-3-comics' 'material-3-comics-git')
+source=("$pkgname-$pkgver.tar.gz::$url/releases/download/v$pkgver/m3-comics-x86_64-linux.tar.gz")
+sha256sums=('@SHA256@')
+
+package() {
+  cd "m3-comics-x86_64-linux"
+  install -Dm755 m3-comics "$pkgdir/usr/bin/m3-comics"
+  install -Dm644 material_3_comics.desktop "$pkgdir/usr/share/applications/material_3_comics.desktop"
+  install -Dm644 m3-comics-update.service "$pkgdir/usr/lib/systemd/user/m3-comics-update.service"
+  install -Dm644 m3-comics-update.timer "$pkgdir/usr/lib/systemd/user/m3-comics-update.timer"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 LICENSE-Inter.txt "$pkgdir/usr/share/licenses/$pkgname/LICENSE-Inter.txt"
+}

@@ -42,10 +42,6 @@ pub trait Source: Send + Sync {
     /// Newest first, as sources list them.
     fn chapters(&self, key: &str) -> Result<Vec<ChapterInfo>>;
     fn pages(&self, manga_key: &str, chapter_key: &str) -> Result<Vec<PageRef>>;
-    /// Headers needed to load this source's covers.
-    fn image_headers(&self) -> Vec<(String, String)> {
-        Vec::new()
-    }
 }
 
 pub fn agent() -> ureq::Agent {

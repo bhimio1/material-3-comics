@@ -109,12 +109,6 @@ impl Covers {
             _ => None,
         }
     }
-
-    /// Forget a cover so it's fetched again (after a refresh changed it).
-    pub fn forget(&mut self, url: &str) {
-        self.cache.pop(url);
-        let _ = std::fs::remove_file(cache_dir().join(format!("{:016x}", hash(url))));
-    }
 }
 
 /// UV rect that center-crops an image of `size` to the aspect of `rect`.

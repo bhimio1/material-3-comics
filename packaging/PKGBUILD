@@ -1,0 +1,55 @@
+# Maintainer: bhimio1
+pkgname=material-3-comics-git
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Material 3 manga and comics reader, after Mihon: library, sources, downloads, tracking"
+arch=('x86_64' 'aarch64')
+url="https://github.com/bhimio1/material-3-comics"
+license=('MIT')
+depends=('libxkbcommon' 'wayland' 'libglvnd')
+makedepends=('cargo' 'git')
+optdepends=(
+  'libarchive: open CBR, CB7 and CBT files (bsdtar)'
+  'libsecret: keep the AniList sign-in in your keyring'
+  'suwayomi-server-bin: Mihon extensions as sources'
+  'xdg-desktop-portal: the folder pickers'
+  'material-3-file-manager: Show in Files'
+)
+provides=('material-3-comics')
+conflicts=('material-3-comics' 'material-3-comics-bin')
+source=("$pkgname::git+$url.git")
+sha256sums=('SKIP')
+
+pkgver() {
+  cd "$pkgname"
+  printf "0.1.0.r%s.g%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+prepare() {
+  cd "$pkgname"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "$pkgname"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  cargo build --frozen --release
+}
+
+check() {
+  cd "$pkgname"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo test --frozen
+}
+
+package() {
+  cd "$pkgname"
+  install -Dm755 target/release/m3-comics "$pkgdir/usr/bin/m3-comics"
+  install -Dm644 packaging/material_3_comics.desktop "$pkgdir/usr/share/applications/material_3_comics.desktop"
+  install -Dm644 packaging/m3-comics-update.service "$pkgdir/usr/lib/systemd/user/m3-comics-update.service"
+  install -Dm644 packaging/m3-comics-update.timer "$pkgdir/usr/lib/systemd/user/m3-comics-update.timer"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 assets/fonts/LICENSE-Inter.txt "$pkgdir/usr/share/licenses/$pkgname/LICENSE-Inter.txt"
+}

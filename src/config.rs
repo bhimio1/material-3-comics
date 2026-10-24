@@ -120,8 +120,6 @@ pub struct Reader {
     pub background: Background,
     /// Width of the strip in the scrolling modes, as a share of the window.
     pub strip_width: f32,
-    /// Two pages side by side in the paged modes, when the window is wide.
-    pub double_pages: bool,
     /// Pages to load ahead.
     pub preload: usize,
     pub show_page_number: bool,
@@ -138,7 +136,6 @@ impl Default for Reader {
             fit: Fit::Screen,
             background: Background::Black,
             strip_width: 0.6,
-            double_pages: false,
             preload: 4,
             show_page_number: true,
             tap_zones: true,

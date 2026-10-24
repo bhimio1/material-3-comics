@@ -129,7 +129,6 @@ impl Chapter {
 pub struct LibraryEntry {
     pub manga: Manga,
     pub unread: i64,
-    pub total: i64,
     pub last_read: i64,
     pub latest_upload: i64,
     pub categories: Vec<i64>,
@@ -258,13 +257,6 @@ impl Db {
 
     pub fn manga(&self, id: i64) -> Result<Option<Manga>> {
         Ok(self.c().query_row(&format!("SELECT {MANGA_COLS} FROM manga m WHERE m.id = ?1"), [id], |r| manga_row(r, 0)).optional()?)
-    }
-
-    pub fn find_manga(&self, source: &str, key: &str) -> Result<Option<Manga>> {
-        Ok(self
-            .c()
-            .query_row(&format!("SELECT {MANGA_COLS} FROM manga m WHERE m.source = ?1 AND m.key = ?2"), params![source, key], |r| manga_row(r, 0))
-            .optional()?)
     }
 
     /// Keys of a source's series that are in the library, for badges.
@@ -402,7 +394,7 @@ impl Db {
         ))?;
         let mut out = st
             .query_map([], |r| {
-                Ok(LibraryEntry { manga: manga_row(r, 0)?, unread: r.get(15)?, total: r.get(16)?, last_read: r.get(17)?, latest_upload: r.get(18)?, categories: Vec::new() })
+                Ok(LibraryEntry { manga: manga_row(r, 0)?, unread: r.get(15)?, last_read: r.get(17)?, latest_upload: r.get(18)?, categories: Vec::new() })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         let mut st = c.prepare("SELECT manga_id, category_id FROM manga_category")?;
@@ -598,7 +590,6 @@ mod tests {
         assert_eq!(m.info.author, "A");
         assert_eq!(m.info.genres, vec!["G"]);
         assert_eq!(m.info.status, Status::Ongoing);
-        assert_eq!(db.find_manga("mangadex", "k").unwrap().unwrap().id, id);
         assert!(db.library_keys("mangadex").unwrap().contains("k"));
         db.set_reader_mode(id, Some(ReadingMode::Webtoon)).unwrap();
         assert_eq!(db.manga(id).unwrap().unwrap().reader_mode, Some(ReadingMode::Webtoon));
@@ -626,7 +617,7 @@ mod tests {
         assert!(db.chapter(a).unwrap().unwrap().read, "progress survives a sync");
 
         let lib = db.library().unwrap();
-        assert_eq!((lib[0].unread, lib[0].total), (2, 3));
+        assert_eq!(lib[0].unread, 2);
         db.set_read(&[new[0]], true).unwrap();
         assert_eq!(db.library().unwrap()[0].unread, 1);
 

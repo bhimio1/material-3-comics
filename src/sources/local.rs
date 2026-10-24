@@ -41,8 +41,12 @@ fn hidden(path: &Path) -> bool {
 }
 
 /// A folder that is a chapter: it holds images.
+/// A folder of pictures that is one chapter (not a series folder with a
+/// cover next to its chapter files).
 fn is_image_folder(path: &Path) -> bool {
-    path.is_dir() && !archive::list_folder(path).is_empty()
+    path.is_dir()
+        && !archive::list_folder(path).is_empty()
+        && !std::fs::read_dir(path).map(|r| r.flatten().any(|e| e.path().is_file() && archive::is_comic_file(&e.path()))).unwrap_or(false)
 }
 
 fn is_chapter(path: &Path) -> bool {
@@ -338,5 +342,9 @@ mod tests {
         assert_eq!(Local::series_for(&series.join("1.cbz")), series.join("1.cbz").canonicalize().unwrap());
         cbz(&series.join("2.cbz"), &["1.jpg"], None);
         assert_eq!(Local::series_for(&series.join("1.cbz")), series.canonicalize().unwrap());
+        // A cover next to the chapters doesn't make the series a chapter.
+        std::fs::write(series.join("cover.jpg"), b"x").unwrap();
+        assert_eq!(Local::series_for(&series.join("2.cbz")), series.canonicalize().unwrap());
+        assert_eq!(Local::new(vec![dir.path().to_path_buf()]).chapters(&series.display().to_string()).unwrap().len(), 2);
     }
 }

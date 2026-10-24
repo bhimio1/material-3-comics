@@ -52,7 +52,7 @@ pub struct Job {
 }
 
 pub enum Event {
-    Finished { chapter_id: i64, title: String, chapter: String },
+    Finished,
     Failed { title: String, chapter: String, error: String },
 }
 
@@ -119,7 +119,7 @@ impl Downloads {
     /// Queue chapters (skipping downloaded and queued ones).
     pub fn enqueue(&mut self, items: Vec<(Manga, Chapter)>) -> usize {
         let mut added = 0;
-        let items: Vec<(Manga, Chapter)> = items.into_iter().filter(|(m, c)| !self.is_downloaded(m, c)).collect();
+        let items: Vec<(Manga, Chapter)> = items.into_iter().filter(|(m, c)| m.source != crate::sources::local::ID && !self.is_downloaded(m, c)).collect();
         let fresh: Vec<Job> = items
             .into_iter()
             .map(|(manga, chapter)| Job { dest: chapter_path(&self.root, &manga, &chapter), manga, chapter, state: JobState::Queued })
@@ -287,7 +287,7 @@ fn run(shared: Arc<Shared>, sources: Arc<Sources>, events: flume::Sender<Event>,
         match result {
             Ok(()) if !cancelled => {
                 jobs.retain(|j| j.chapter.id != job.chapter.id);
-                let _ = events.send(Event::Finished { chapter_id: job.chapter.id, title: job.manga.title().to_string(), chapter: job.chapter.name.clone() });
+                let _ = events.send(Event::Finished);
             }
             Ok(()) => {
                 let _ = std::fs::remove_file(&job.dest);

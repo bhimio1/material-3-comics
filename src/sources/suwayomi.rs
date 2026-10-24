@@ -6,7 +6,7 @@
 //!
 //! Only the fields every Suwayomi release since 1.0 has are asked for.
 
-use super::{get_json, Source};
+use super::Source;
 use crate::model::{ChapterInfo, MangaInfo, MangaList, PageRef, Status};
 use anyhow::{anyhow, bail, Result};
 use serde_json::{json, Value};
@@ -188,7 +188,7 @@ impl Client {
                     .collect()
             })
             .unwrap_or_default();
-        out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        out.sort_by_key(|a| a.name.to_lowercase());
         out
     }
 
@@ -296,11 +296,6 @@ impl Client {
         }
         Ok(pages)
     }
-
-    /// Plain REST GET, for checking the server is up.
-    pub fn ping(&self) -> bool {
-        get_json(&self.agent, &format!("{}/api/v1/settings/about", self.base), &self.headers()).is_ok() || self.about().is_ok()
-    }
 }
 
 /// One of the server's sources.
@@ -362,10 +357,6 @@ impl Source for RemoteSource {
 
     fn pages(&self, _manga_key: &str, chapter_key: &str) -> Result<Vec<PageRef>> {
         self.client.pages(chapter_key)
-    }
-
-    fn image_headers(&self) -> Vec<(String, String)> {
-        self.client.headers()
     }
 }
 
