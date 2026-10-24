@@ -30,6 +30,7 @@ Your library, updates, history and downloads work the way they do in Mihon. Sour
 
 **Reader**
 - **Modes:** right to left (manga), left to right (comics), vertical, and webtoon (one long strip with no gaps). Each series can have its own mode.
+- **Two-page view:** pages side by side like an open book, in reading order. Wide images are recognised as spreads and shown on their own, the cover stays alone, and pairing starts again after each spread so the pages around it line up. If a chapter's pairs are still off by one, **Shift pairs** (S) fixes it. It's on for wide windows by default; choose one page, two pages or automatic in Preferences or the reader's menu (D toggles it).
 - **Page fit:** screen, width, height or original size, on a black, gray, white or theme-colored background.
 - **Tap zones:** click the left or right third to turn pages, or the middle for the menu. The menu has the chapter, a page slider, a bookmark button, the reading mode and fullscreen.
 - **Moving between chapters:** a card between chapters, and an option to go straight on to the next one.
@@ -56,7 +57,7 @@ Your library, updates, history and downloads work the way they do in Mihon. Sour
 | Anywhere | Ctrl+1–5 Library, Updates, History, Browse, Downloads · Ctrl+F or / search · Ctrl+R refresh · Alt+← or Backspace back |
 | Reader, paged | ←/→ turn pages (in the reading direction) · Space/Shift+Space or PgDn/PgUp next/previous · Home/End first/last page · mouse wheel turns pages |
 | Reader, strip | ↓/↑ or J/K scroll · Space, PgDn, → a screen down · Shift+Space, PgUp, ← a screen up |
-| Reader | [ ] or P/N previous/next chapter · M menu · F or F11 fullscreen · Esc back |
+| Reader | [ ] or P/N previous/next chapter · D one or two pages · S shift pairs · M menu · F or F11 fullscreen · Esc back |
 
 ## Install
 
@@ -125,7 +126,7 @@ AniList needs an API client of your own (it's free and takes a minute):
 
 Preferences has:
 - the shared Appearance card;
-- the reader: default mode, page fit, strip width, background, page number, tap zones, going on to the next chapter, pages to preload;
+- the reader: default mode, two-page view and the cover rule, page fit, strip width, background, page number, tap zones, going on to the next chapter, pages to preload;
 - the library: folders for Local files, and categories;
 - updates: the interval, notifications, downloading new chapters automatically;
 - downloads: the folder, deleting chapters after reading;

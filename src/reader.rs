@@ -4,7 +4,7 @@
 //! reading mode and fullscreen.
 
 use crate::app::App;
-use crate::config::{Background, Fit, ReadingMode};
+use crate::config::{Background, Fit, PageLayout, ReadingMode};
 use crate::db::{Chapter, Manga};
 use crate::model::PageRef;
 use crate::pages::{Page, PageKey, PageLoader, PageState};
@@ -15,6 +15,7 @@ use material_3_ui::sys::task::Task;
 use material_3_ui::theme::M3Palette;
 use material_3_ui::widgets::{self, ButtonKind};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Gap between pages in the vertical mode.
 const GAP: f32 = 12.0;
@@ -50,6 +51,47 @@ pub struct Reader {
     fit_screen_hint: bool,
     /// The scrolling modes: the end of the strip is in view.
     at_bottom: bool,
+    /// Two pages side by side (set each frame from the layout setting).
+    double: bool,
+    cover_alone: bool,
+    /// Pair pages the other way (for chapters whose spreads are off by
+    /// one page).
+    pub shift: bool,
+    /// The last page on screen, for progress.
+    last_shown: usize,
+}
+
+/// What the paged modes show at once: one page, or two in reading order
+/// (first, second).
+pub type Spread = (usize, Option<usize>);
+
+/// A page wider than it is tall is a two-page spread already.
+fn is_wide(size: egui::Vec2) -> bool {
+    size.x > size.y * 1.1
+}
+
+/// Pair up `n` pages for the two-page view. Wide pages (spreads) stand
+/// alone, as does the cover when `cover_alone`; pairing starts again after
+/// each lone page, so pages around a spread line up the way the book
+/// does. Pages whose size isn't known yet count as single pages.
+pub fn spreads(n: usize, sizes: &HashMap<usize, egui::Vec2>, cover_alone: bool) -> Vec<Spread> {
+    let wide = |i: usize| sizes.get(&i).is_some_and(|s| is_wide(*s));
+    let mut out = Vec::with_capacity(n / 2 + 1);
+    let mut i = 0;
+    if cover_alone && n > 0 {
+        out.push((0, None));
+        i = 1;
+    }
+    while i < n {
+        if wide(i) || i + 1 >= n || wide(i + 1) {
+            out.push((i, None));
+            i += 1;
+        } else {
+            out.push((i, Some(i + 1)));
+            i += 2;
+        }
+    }
+    out
 }
 
 /// What the reader asks the app for after drawing.
@@ -58,6 +100,7 @@ enum Event {
     Chapter(usize, bool),
     Close,
     Mode(ReadingMode),
+    Layout(PageLayout),
     Bookmark(bool),
 }
 
@@ -84,6 +127,10 @@ impl Reader {
             strip_forced: false,
             fit_screen_hint: true,
             at_bottom: false,
+            double: false,
+            cover_alone: true,
+            shift: false,
+            last_shown: 0,
         }
     }
 
@@ -137,6 +184,13 @@ impl Reader {
             }
         }
         self.loader.poll();
+        for i in 0..self.page_count() {
+            if !self.sizes.contains_key(&i) {
+                if let Some(p) = self.loader.ready(self.key(i)) {
+                    self.sizes.insert(i, p.size);
+                }
+            }
+        }
     }
 
     /// Ask for the pages around the current one, current first.
@@ -146,7 +200,8 @@ impl Reader {
         let n = pages.len();
         let cur = self.page.min(n.saturating_sub(1));
         let mut order = vec![cur];
-        for i in 1..=preload.max(1) {
+        let ahead = if self.double { preload.max(4) } else { preload.max(1) };
+        for i in 1..=ahead {
             if cur + i < n {
                 order.push(cur + i);
             }
@@ -154,7 +209,7 @@ impl Reader {
         if cur > 0 {
             order.push(cur - 1);
         }
-        if cur > 1 && self.mode.continuous() {
+        if cur > 1 && (self.mode.continuous() || self.double) {
             order.push(cur - 2);
         }
         let list = order.into_iter().map(|i| (PageKey { chapter, index: i }, pages[i].clone())).collect();
@@ -163,6 +218,16 @@ impl Reader {
 
     fn key(&self, index: usize) -> PageKey {
         PageKey { chapter: self.chapter().id, index }
+    }
+
+    /// The two-page view's spreads, or None in one-page view.
+    fn spreads(&self) -> Option<Vec<Spread>> {
+        (self.double && !self.mode.continuous()).then(|| spreads(self.page_count(), &self.sizes, self.cover_alone != self.shift))
+    }
+
+    /// The spread holding the current page.
+    fn spread_at(list: &[Spread], page: usize) -> usize {
+        list.iter().rposition(|s| s.0 <= page).unwrap_or(0)
     }
 }
 
@@ -215,6 +280,8 @@ fn page_text(r: &Reader) -> String {
     let n = r.page_count();
     if n == 0 {
         String::new()
+    } else if r.last_shown > r.page && r.page < n {
+        format!("{}–{} / {n}", r.page + 1, r.last_shown + 1)
     } else {
         format!("{} / {n}", (r.page + 1).min(n))
     }
@@ -223,6 +290,14 @@ fn page_text(r: &Reader) -> String {
 pub fn show(ui: &mut Ui, app: &mut App) {
     let Some(mut r) = app.reader.take() else { return };
     let mut events = Vec::new();
+    r.cover_alone = app.cfg.reader.cover_alone;
+    let screen = ui.ctx().content_rect();
+    r.double = match app.cfg.reader.layout {
+        PageLayout::Single => false,
+        PageLayout::Double => true,
+        PageLayout::Auto => screen.width() > screen.height(),
+    };
+    r.last_shown = r.page;
     r.poll();
     r.want(app.cfg.reader.preload);
     let p = app.palette.clone();
@@ -245,7 +320,7 @@ pub fn show(ui: &mut Ui, app: &mut App) {
             paged(ui, &mut r, app, rect, fg, &mut events);
         }
         if r.menu {
-            menu(ui, &mut r, rect, &p, &mut events);
+            menu(ui, &mut r, app.cfg.reader.layout, rect, &p, &mut events);
         } else if app.cfg.reader.show_page_number && r.page_count() > 0 && r.page < r.page_count() && !(r.mode.continuous() && r.at_bottom) {
             let text = page_text(&r);
             let galley = ui.painter().layout_no_wrap(text, egui::FontId::proportional(12.5), Color32::WHITE);
@@ -257,9 +332,10 @@ pub fn show(ui: &mut Ui, app: &mut App) {
     });
     // Report the page once it changes.
     let n = r.page_count();
-    if n > 0 && r.reported != Some(r.page) {
-        r.reported = Some(r.page);
-        events.push(Event::Progress(r.chapter().clone(), r.page.min(n - 1), n));
+    let shown = r.last_shown.max(r.page);
+    if n > 0 && r.page < n && r.reported != Some(shown) {
+        r.reported = Some(shown);
+        events.push(Event::Progress(r.chapter().clone(), shown.min(n - 1), n));
     }
     app.reader = Some(r);
     for e in events {
@@ -306,6 +382,10 @@ fn handle(app: &mut App, e: Event) {
                 let _ = app.db.set_reader_mode(id, if mode == app.cfg.reader.mode { None } else { Some(mode) });
             }
         }
+        Event::Layout(layout) => {
+            app.cfg.reader.layout = layout;
+            app.save_config();
+        }
         Event::Bookmark(on) => {
             if let Some(r) = &mut app.reader {
                 let i = r.index;
@@ -326,7 +406,10 @@ fn toggle_fullscreen(ctx: &egui::Context, r: &mut Reader) {
 fn forward(r: &mut Reader, continue_to_next: bool, events: &mut Vec<Event>) {
     let n = r.page_count();
     if r.page < n {
-        r.page += 1;
+        r.page = match r.spreads() {
+            Some(list) => list.get(Reader::spread_at(&list, r.page) + 1).map_or(n, |s| s.0),
+            None => r.page + 1,
+        };
     } else if let Some(next) = r.next_index() {
         if continue_to_next {
             events.push(Event::Chapter(next, false));
@@ -336,7 +419,11 @@ fn forward(r: &mut Reader, continue_to_next: bool, events: &mut Vec<Event>) {
 
 fn backward(r: &mut Reader, events: &mut Vec<Event>) {
     if r.page > 0 {
-        r.page -= 1;
+        r.page = match r.spreads() {
+            Some(list) if r.page >= r.page_count() => list.last().map_or(0, |s| s.0),
+            Some(list) => list[Reader::spread_at(&list, r.page).saturating_sub(1)].0,
+            None => r.page - 1,
+        };
     } else if let Some(prev) = r.prev_index() {
         events.push(Event::Chapter(prev, true));
     }
@@ -362,6 +449,14 @@ fn keys(ctx: &egui::Context, r: &mut Reader, app: &App, events: &mut Vec<Event>,
     }
     if take_key(ctx, none, Key::M) {
         r.menu = !r.menu;
+    }
+    if !r.mode.continuous() {
+        if take_key(ctx, none, Key::D) {
+            events.push(Event::Layout(if r.double { PageLayout::Single } else { PageLayout::Double }));
+        }
+        if take_key(ctx, none, Key::S) && r.double {
+            r.shift = !r.shift;
+        }
     }
     if take_key(ctx, none, Key::CloseBracket) || take_key(ctx, none, Key::N) {
         if let Some(i) = r.next_index() {
@@ -505,7 +600,7 @@ fn transition(ui: &mut Ui, r: &Reader, rect: Rect, fg: Color32, at_end: bool, ev
     });
 }
 
-/// The pages one at a time.
+/// The pages one (or two) at a time.
 fn paged(ui: &mut Ui, r: &mut Reader, app: &App, rect: Rect, fg: Color32, events: &mut Vec<Event>) {
     let n = r.page_count();
     r.page = r.page.min(n);
@@ -517,51 +612,18 @@ fn paged(ui: &mut Ui, r: &mut Reader, app: &App, rect: Rect, fg: Color32, events
         let resp = ui.interact(rect, ui.scope_id().with("end"), Sense::click());
         resp.clicked().then(|| resp.interact_pointer_pos()).flatten()
     } else {
-        let key = r.key(r.page);
-        match r.loader.get(key) {
-            PageState::Ready(page) => {
-                let page = page.clone();
-                r.sizes.insert(r.page, page.size);
-                let (w, h) = (page.size.x, page.size.y);
-                let scale = match app.cfg.reader.fit {
-                    Fit::Screen => (rect.width() / w).min(rect.height() / h),
-                    Fit::Width => rect.width() / w,
-                    Fit::Height => rect.height() / h,
-                    Fit::Original => 1.0 / ppp,
-                };
-                let size = vec2(w, h) * scale;
-                let fits = size.x <= rect.width() + 0.5 && size.y <= rect.height() + 0.5;
-                r.fit_screen_hint = fits;
-                if fits {
-                    let target = Rect::from_center_size(rect.center(), size);
-                    paint_page(ui, &page, target);
-                    let resp = ui.interact(rect, ui.scope_id().with("page"), Sense::click());
-                    resp.clicked().then(|| resp.interact_pointer_pos()).flatten()
-                } else {
-                    let mut pos = None;
-                    ui.scope_builder(UiBuilder::new().max_rect(rect), |ui| {
-                        egui::ScrollArea::both().id_salt(("page", key.chapter, key.index)).auto_shrink([false, false]).show(ui, |ui| {
-                            let avail = ui.available_size();
-                            let outer = vec2(size.x.max(avail.x), size.y.max(avail.y));
-                            let (area, resp) = ui.allocate_exact_size(outer, Sense::click());
-                            let target = Rect::from_center_size(area.center(), size);
-                            paint_page(ui, &page, target);
-                            if resp.clicked() {
-                                pos = resp.interact_pointer_pos();
-                            }
-                        });
-                    });
-                    pos
-                }
-            }
-            state => {
-                if placeholder(ui, state, rect, fg) {
-                    r.loader.retry(key);
-                }
-                let resp = ui.interact(rect.shrink2(vec2(0.0, rect.height() * 0.3)), ui.scope_id().with("loading"), Sense::click());
-                resp.clicked().then(|| resp.interact_pointer_pos()).flatten()
-            }
+        let spread = match r.spreads() {
+            Some(list) => list[Reader::spread_at(&list, r.page)],
+            None => (r.page, None),
+        };
+        r.page = spread.0;
+        r.last_shown = spread.1.unwrap_or(spread.0);
+        // Reading order on screen: right to left puts the first page on the right.
+        let mut on_screen: Vec<usize> = std::iter::once(spread.0).chain(spread.1).collect();
+        if r.mode == ReadingMode::RightToLeft {
+            on_screen.reverse();
         }
+        show_spread(ui, r, &on_screen, app.cfg.reader.fit, ppp, rect, fg)
     };
     if let Some(pos) = clicked {
         let third = rect.width() / 3.0;
@@ -574,6 +636,76 @@ fn paged(ui: &mut Ui, r: &mut Reader, app: &App, rect: Rect, fg: Color32, events
             backward(r, events);
         }
     }
+}
+
+/// Draw pages side by side, left to right, at one height. Returns where
+/// the page was clicked.
+fn show_spread(ui: &mut Ui, r: &mut Reader, pages: &[usize], fit: Fit, ppp: f32, rect: Rect, fg: Color32) -> Option<egui::Pos2> {
+    let states: Vec<(PageKey, Option<Arc<Page>>)> = pages
+        .iter()
+        .map(|&i| {
+            let key = r.key(i);
+            (key, r.loader.ready(key))
+        })
+        .collect();
+    // Width over height of each page; a loading page borrows its
+    // neighbour's shape.
+    let known: Vec<f32> = states.iter().filter_map(|(_, p)| p.as_ref().map(|p| p.size.x / p.size.y.max(1.0))).collect();
+    let fallback = known.first().copied().unwrap_or(0.7);
+    let aspects: Vec<f32> = states.iter().map(|(_, p)| p.as_ref().map_or(fallback, |p| p.size.x / p.size.y.max(1.0))).collect();
+    let total_aspect: f32 = aspects.iter().sum();
+    let tallest = states.iter().filter_map(|(_, p)| p.as_ref().map(|p| p.size.y)).fold(0.0, f32::max);
+    let height = match fit {
+        Fit::Screen => rect.height().min(rect.width() / total_aspect),
+        Fit::Width => rect.width() / total_aspect,
+        Fit::Height => rect.height(),
+        Fit::Original if tallest > 0.0 => tallest / ppp,
+        Fit::Original => rect.height(),
+    };
+    let size = vec2(height * total_aspect, height);
+    let fits = size.x <= rect.width() + 0.5 && size.y <= rect.height() + 0.5;
+    r.fit_screen_hint = fits;
+    let mut retry = Vec::new();
+    let mut draw = |ui: &mut Ui, target: Rect| {
+        let mut x = target.left();
+        for ((key, page), aspect) in states.iter().zip(&aspects) {
+            let w = height * aspect;
+            let slot = Rect::from_min_size(pos2(x, target.top()), vec2(w, height));
+            match page {
+                Some(p) => paint_page(ui, p, slot),
+                None => {
+                    if placeholder(ui, r.loader.get(*key), slot, fg) {
+                        retry.push(*key);
+                    }
+                }
+            }
+            x += w;
+        }
+    };
+    let pos = if fits {
+        draw(ui, Rect::from_center_size(rect.center(), size));
+        let resp = ui.interact(rect, ui.scope_id().with("page"), Sense::click());
+        resp.clicked().then(|| resp.interact_pointer_pos()).flatten()
+    } else {
+        let mut pos = None;
+        let first = states[0].0;
+        ui.scope_builder(UiBuilder::new().max_rect(rect), |ui| {
+            egui::ScrollArea::both().id_salt(("page", first.chapter, first.index)).auto_shrink([false, false]).show(ui, |ui| {
+                let avail = ui.available_size();
+                let outer = vec2(size.x.max(avail.x), size.y.max(avail.y));
+                let (area, resp) = ui.allocate_exact_size(outer, Sense::click());
+                draw(ui, Rect::from_center_size(area.center(), size));
+                if resp.clicked() {
+                    pos = resp.interact_pointer_pos();
+                }
+            });
+        });
+        pos
+    };
+    for key in retry {
+        r.loader.retry(key);
+    }
+    pos
 }
 
 /// Where each page starts in the strip, and the strip's total height.
@@ -678,7 +810,7 @@ fn strip(ui: &mut Ui, r: &mut Reader, app: &App, rect: Rect, fg: Color32, events
     }
 }
 
-fn menu(ui: &mut Ui, r: &mut Reader, rect: Rect, p: &M3Palette, events: &mut Vec<Event>) {
+fn menu(ui: &mut Ui, r: &mut Reader, layout: PageLayout, rect: Rect, p: &M3Palette, events: &mut Vec<Event>) {
     let ctx = ui.ctx().clone();
     let bar_fill = p.surface_container;
     // Top bar: back, titles, bookmark, mode, fullscreen.
@@ -719,6 +851,24 @@ fn menu(ui: &mut Ui, r: &mut Reader, rect: Rect, p: &M3Palette, events: &mut Vec
                         }
                     }
                 });
+                if !r.mode.continuous() {
+                    let icon = if r.double { ICON_IMPORT_CONTACTS } else { ICON_CROP_PORTRAIT };
+                    let resp = widgets::icon_button(ui, icon, "Page layout (D)", true);
+                    egui::Popup::menu(&resp).show(|ui| {
+                        ui.set_min_width(240.0);
+                        for l in PageLayout::ALL {
+                            if widgets::menu_item(ui, None, l.label(), "", l == layout) {
+                                events.push(Event::Layout(l));
+                                ui.close();
+                            }
+                        }
+                        ui.separator();
+                        if widgets::menu_item(ui, Some(ICON_SWAP_HORIZ), "Shift pairs", "S", r.shift) {
+                            r.shift = !r.shift;
+                            ui.close();
+                        }
+                    });
+                }
                 let marked = r.chapter().bookmark;
                 let tip = if marked { "Remove bookmark" } else { "Bookmark this chapter" };
                 if widgets::icon_button_sized(ui, ICON_BOOKMARK, tip, true, 36.0, marked).clicked() {
@@ -815,5 +965,49 @@ mod tests {
         let (tops, total) = strip_layout(&r, 100.0, 0.0);
         assert_eq!(tops, vec![TRANSITION, TRANSITION + 300.0, TRANSITION + 600.0, TRANSITION + 900.0]);
         assert_eq!(total, TRANSITION * 2.0 + 900.0);
+    }
+
+    fn sizes(wide: &[usize], n: usize) -> HashMap<usize, egui::Vec2> {
+        (0..n).map(|i| (i, if wide.contains(&i) { vec2(1600.0, 1200.0) } else { vec2(800.0, 1200.0) })).collect()
+    }
+
+    #[test]
+    fn pairs_pages_around_the_cover_and_spreads() {
+        // Cover alone, then pairs.
+        assert_eq!(spreads(5, &sizes(&[], 5), true), vec![(0, None), (1, Some(2)), (3, Some(4))]);
+        // Without the cover rule (or shifted), pairs start at the first page.
+        assert_eq!(spreads(5, &sizes(&[], 5), false), vec![(0, Some(1)), (2, Some(3)), (4, None)]);
+        // A wide page stands alone, and pairing starts again after it:
+        // page 3 has no partner before the spread, 5 and 6 pair after it.
+        assert_eq!(spreads(7, &sizes(&[4], 7), true), vec![(0, None), (1, Some(2)), (3, None), (4, None), (5, Some(6))]);
+        // A wide cover is a spread on its own either way.
+        assert_eq!(spreads(3, &sizes(&[0], 3), false), vec![(0, None), (1, Some(2))]);
+        // Unknown sizes count as single pages.
+        assert_eq!(spreads(3, &HashMap::new(), true), vec![(0, None), (1, Some(2))]);
+        assert!(spreads(0, &HashMap::new(), true).is_empty());
+    }
+
+    #[test]
+    fn two_page_view_turns_by_spread() {
+        let mut r = reader(6, 2, 1);
+        r.double = true;
+        r.sizes = sizes(&[3], 6);
+        let mut events = Vec::new();
+        // (0) (1,2) (3) (4,5) then the end card.
+        let mut seen = vec![r.page];
+        for _ in 0..4 {
+            forward(&mut r, true, &mut events);
+            seen.push(r.page);
+        }
+        assert_eq!(seen, vec![0, 1, 3, 4, 6]);
+        backward(&mut r, &mut events);
+        assert_eq!(r.page, 4, "back from the end card to the last spread");
+        backward(&mut r, &mut events);
+        backward(&mut r, &mut events);
+        assert_eq!(r.page, 1);
+        // Shift flips the cover rule.
+        r.shift = true;
+        assert_eq!(r.spreads().unwrap()[0], (0, Some(1)));
+        assert!(events.is_empty());
     }
 }

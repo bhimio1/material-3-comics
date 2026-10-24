@@ -2,7 +2,7 @@
 //! categories), downloads, sources, tracking, and what Comics needs.
 
 use crate::app::{App, BrowseTab, Page};
-use crate::config::{Background, Fit, ReadingMode};
+use crate::config::{Background, Fit, PageLayout, ReadingMode};
 use crate::tracking;
 use egui::{RichText, Ui};
 use material_3_ui::common::{self, card, row, Requirement};
@@ -68,6 +68,18 @@ pub fn show(ui: &mut Ui, app: &mut App) {
                         changed |= ui.selectable_value(&mut r.fit, f, f.label()).changed();
                     }
                 });
+            });
+            ui.separator();
+            row(ui, "Two-page view", "In the paged modes. Wide images are spreads and stay on their own.", |ui| {
+                egui::ComboBox::from_id_salt("layout").selected_text(r.layout.label()).show_ui(ui, |ui| {
+                    for l in PageLayout::ALL {
+                        changed |= ui.selectable_value(&mut r.layout, l, l.label()).changed();
+                    }
+                });
+            });
+            ui.separator();
+            row(ui, "Cover on its own", "In two-page view, show the first page alone, like a book's cover. Press S in the reader if a chapter's pairs are still off.", |ui| {
+                changed |= switch(ui, &mut r.cover_alone).changed();
             });
             ui.separator();
             row(ui, "Strip width", "How wide pages are in the vertical and webtoon modes.", |ui| {

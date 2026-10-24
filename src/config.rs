@@ -76,6 +76,29 @@ impl Fit {
     }
 }
 
+/// One page or two side by side, in the paged modes.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum PageLayout {
+    Single,
+    Double,
+    /// Two pages when the window is wider than it is tall.
+    #[default]
+    Auto,
+}
+
+impl PageLayout {
+    pub const ALL: [PageLayout; 3] = [PageLayout::Single, PageLayout::Double, PageLayout::Auto];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            PageLayout::Single => "One page",
+            PageLayout::Double => "Two pages",
+            PageLayout::Auto => "Two pages on wide windows",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Background {
@@ -117,6 +140,9 @@ impl LibrarySort {
 pub struct Reader {
     pub mode: ReadingMode,
     pub fit: Fit,
+    pub layout: PageLayout,
+    /// In two-page view, the first page (the cover) is shown alone.
+    pub cover_alone: bool,
     pub background: Background,
     /// Width of the strip in the scrolling modes, as a share of the window.
     pub strip_width: f32,
@@ -134,6 +160,8 @@ impl Default for Reader {
         Reader {
             mode: ReadingMode::RightToLeft,
             fit: Fit::Screen,
+            layout: PageLayout::Auto,
+            cover_alone: true,
             background: Background::Black,
             strip_width: 0.6,
             preload: 4,
