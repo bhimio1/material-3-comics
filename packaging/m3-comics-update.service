@@ -1,0 +1,8 @@
+[Unit]
+Description=Material 3 Comics library update
+Documentation=https://github.com/bhimio1/material-3-comics
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/m3-comics update
